@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import logging
 
-from src.pipeline import IAEARagPipeline, PipelineConfig
+from src.pipeline import IAEARagPipeline
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="IAEA Nuclear Document RAG API", version="1.0.0")

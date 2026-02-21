@@ -9,7 +9,6 @@ Tracks:
 """
 
 import json
-import time
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -17,10 +16,10 @@ from dataclasses import dataclass, asdict
 LOG_PATH = Path("logs/query_log.jsonl")
 LOG_PATH.parent.mkdir(exist_ok=True)
 
-# OpenAI pricing (USD per 1K tokens) — update as needed
+# groq pricing (USD per 1K tokens)
 PRICING = {
-    "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
-    "gpt-4o":      {"input": 0.005,   "output": 0.015},
+    "llama-3.1-8b-instant":     {"input": 0.00005, "output": 0.00008},
+    "llama-3.3-70b-versatile":  {"input": 0.00059, "output": 0.00079},
 }
 
 

@@ -6,12 +6,11 @@ Retrieval  : hybrid search (BM25 + vector) → rerank → LLM answer
 Monitoring : logs query latency, retrieval scores, token usage
 """
 
-import os
 import time
 import logging
-from pathlib import Path
+from src.monitoring import log_query, print_metrics
 from typing import Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from langchain_community.document_loaders import TextLoader, PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -301,4 +300,6 @@ class IAEARagPipeline:
             f"latency={result['total_latency_sec']}s | "
             f"tokens={result['input_tokens']}+{result['output_tokens']}"
         )
+        metrics = log_query(result, question, model=self.cfg.llm_model)
+        print_metrics(metrics)
         return result
