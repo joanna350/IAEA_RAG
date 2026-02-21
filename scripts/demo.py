@@ -13,6 +13,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pathlib import Path
 
 
+from pipeline import PipelineConfig, load_documents, chunk_documents, build_bm25_index
+from data_quality import validate_chunks, print_quality_report
+
+
 def run_demo():
     print("=" * 60)
     print("  IAEA RAG Pipeline — Offline Demo (no API key required)")
@@ -22,25 +26,11 @@ def run_demo():
 
     # 1. Load documents
     print("\n[1] Loading documents...")
-    docs = []
-    for f in Path(cfg.data_dir).glob("*.txt"):
-        loader = TextLoader(str(f), encoding="utf-8")
-        loaded = loader.load()
-        for d in loaded:
-            d.metadata["source"] = f.name
-        docs.extend(loaded)
-        print(f"    Loaded: {f.name} ({len(loaded)} page(s))")
+    docs = load_documents(cfg.data_dir)
 
     # 2. Chunk
     print(f"\n[2] Chunking (size={cfg.chunk_size}, overlap={cfg.chunk_overlap})...")
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=cfg.chunk_size,
-        chunk_overlap=cfg.chunk_overlap,
-        separators=["\n\n", "\n", ".", " ", ""],
-    )
-    chunks = splitter.split_documents(docs)
-    for i, c in enumerate(chunks):
-        c.metadata["chunk_id"] = i
+    chunks = chunk_documents(docs, cfg)
     print(f"    Total chunks: {len(chunks)}")
 
     # 3. Data quality check
@@ -56,11 +46,9 @@ def run_demo():
         print(f"  Preview: {chunk.page_content[:120].strip()}...")
         print()
 
-    # 5. BM25 keyword search (no API needed)
+    # 5. BM25 keyword search
     print("[5] BM25 keyword search demo (no embedding API needed)...")
-    from rank_bm25 import BM25Okapi
-    tokenized = [c.page_content.lower().split() for c in clean_chunks]
-    bm25 = BM25Okapi(tokenized)
+    bm25 = build_bm25_index(clean_chunks)
 
     test_queries = [
         "What are the passive safety requirements for SMR?",

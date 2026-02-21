@@ -16,9 +16,9 @@ from langchain_core.documents import Document
 
 MIN_CHUNK_CHARS = 80
 BOILERPLATE_PATTERNS = [
-    r"^\s*page\s+\d+\s*$",
-    r"^\s*\d+\s*$",
-    r"^[\.\-\*\s]+$",
+    r"^\s*page\s+\d+\s*$", # 페이지 번호
+    r"^\s*\d+\s*$", # 숫자만 있는 줄
+    r"^[\.\-\*\s]+$", # 점, 대시, 별표만 있는 구분선
 ]
 
 
