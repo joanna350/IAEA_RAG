@@ -1,0 +1,84 @@
+IAEA Nuclear Licensing and Authorization Process
+
+1. OVERVIEW OF LICENSING FRAMEWORK
+
+1.1 Purpose of Licensing
+Nuclear licensing ensures that nuclear facilities are designed, constructed, and operated safely.
+The licensing process provides regulatory oversight throughout the facility lifecycle.
+Licenses may be granted for site preparation, construction, commissioning, operation, and decommissioning.
+
+1.2 Regulatory Body Requirements
+The regulatory body must be independent of organizations promoting nuclear energy.
+The regulatory body must have adequate resources, technical competence, and legal authority.
+Transparency and public participation must be ensured in the licensing process.
+
+2. LICENSE APPLICATION REQUIREMENTS
+
+2.1 Preliminary Safety Information Document (PSID)
+The PSID provides early safety information for regulatory review.
+It includes site characterization, preliminary design description, and safety analysis.
+The PSID supports early regulatory feedback before detailed design.
+
+2.2 Final Safety Analysis Report (FSAR)
+The FSAR is the primary licensing document for nuclear facilities.
+It must describe the facility design in sufficient detail for safety evaluation.
+The FSAR must address:
+- Site characteristics and natural hazards
+- Design of safety-significant systems, structures and components
+- Accident analysis including design basis and beyond design basis events
+- Radiation protection program
+- Emergency preparedness and response plans
+- Radioactive waste management
+- Security plans
+- Operational limits and conditions
+
+2.3 Environmental Impact Statement
+An environmental impact statement must accompany license applications.
+It must evaluate radiological and conventional environmental impacts.
+Alternative sites and designs must be considered.
+
+3. SAFETY REVIEW PROCESS
+
+3.1 Completeness Review
+The regulatory body first reviews the application for completeness.
+All required information and analyses must be included.
+Requests for additional information (RAIs) are issued for incomplete submissions.
+
+3.2 Technical Safety Review
+Safety reviewers evaluate the FSAR against applicable regulations and standards.
+Reviews cover reactor physics, thermal hydraulics, structural analysis, and probabilistic risk assessment.
+Independent calculations and analyses may be performed to verify applicant claims.
+
+3.3 Inspection and Verification
+On-site inspections verify conformance with license requirements.
+Construction inspections verify material quality and fabrication standards.
+Pre-operational testing verifies system performance prior to fuel loading.
+
+4. PUBLIC PARTICIPATION
+
+4.1 Public Hearings
+Public hearings must be held for major licensing decisions.
+Interested parties must have opportunity to submit comments and participate in hearings.
+The regulatory body must consider and respond to substantive public comments.
+
+4.2 Freedom of Information
+Non-safeguards licensing documents must be publicly available.
+The regulatory body must maintain a public document management system.
+Security-sensitive information must be protected while maximizing public transparency.
+
+5. LICENSE CONDITIONS AND ONGOING OVERSIGHT
+
+5.1 License Conditions
+Licenses include conditions specifying operational limits and surveillance requirements.
+Conditions must be met throughout the life of the facility.
+Violations of license conditions must be reported to the regulatory body.
+
+5.2 Periodic Safety Reviews
+Periodic safety reviews (PSRs) must be conducted every 10 years.
+PSRs evaluate the cumulative effect of aging, modifications, and new safety information.
+PSR findings may result in backfit requirements or license modifications.
+
+5.3 License Renewal
+Licenses may be renewed upon demonstration that adequate safety margins are maintained.
+Aging management programs must be evaluated for license renewal.
+Major modifications may require supplemental license applications.

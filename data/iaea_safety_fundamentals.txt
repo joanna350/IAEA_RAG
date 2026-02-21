@@ -1,0 +1,51 @@
+IAEA Safety Fundamentals - Fundamental Safety Principles (SF-1)
+
+1. SAFETY OBJECTIVE
+The fundamental safety objective is to protect people and the environment from harmful effects of ionizing radiation.
+
+1.1 Radiation Protection Principles
+The use of nuclear energy and radiation sources must be justified. The benefits must outweigh the risks.
+Radiation doses must be optimized to be as low as reasonably achievable (ALARA).
+Individual doses must not exceed established dose limits.
+
+2. SAFETY PRINCIPLES FOR NUCLEAR INSTALLATIONS
+
+2.1 Responsibility for Safety
+The prime responsibility for safety must rest with the person or organization responsible for facilities and activities.
+
+2.2 Role of Government
+An effective governmental framework for safety must be established and sustained.
+This includes an independent regulatory body with legal authority to regulate nuclear facilities.
+
+2.3 Leadership and Management for Safety
+Effective leadership and management for safety must be established and sustained in organizations concerned with nuclear energy.
+
+3. DESIGN AND ASSESSMENT OF FACILITIES
+
+3.1 Defence in Depth
+A defence in depth approach must be applied to nuclear installations.
+Multiple independent barriers between radioactive materials and workers and the public must be established.
+
+3.2 Safety Assessment
+Comprehensive and systematic safety assessments must be carried out before construction and operation of nuclear installations.
+Regular safety reviews must be conducted throughout the lifetime of the facility.
+
+4. EMERGENCY PREPAREDNESS AND RESPONSE
+
+4.1 Emergency Plans
+Arrangements must be made for emergency preparedness and response for nuclear or radiological emergencies.
+On-site and off-site emergency plans must be developed and exercised.
+
+4.2 Protective Actions
+Criteria and procedures for protective actions must be established.
+Evacuation zones and shelter-in-place protocols must be defined.
+
+5. RADIOACTIVE WASTE MANAGEMENT
+
+5.1 Waste Minimization
+The generation of radioactive waste must be kept to the minimum practicable.
+Radioactive waste must be managed in a manner that ensures acceptable levels of safety.
+
+5.2 Long-term Safety
+The safety of future generations must be ensured through proper disposal of radioactive waste.
+Geological repositories must demonstrate long-term safety for thousands of years.

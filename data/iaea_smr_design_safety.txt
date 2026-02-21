@@ -1,0 +1,68 @@
+IAEA Safety Review for Small Modular Reactors (SMRs)
+
+1. INTRODUCTION TO SMR SAFETY
+
+1.1 Definition and Scope
+Small Modular Reactors (SMRs) are defined as nuclear reactors with an equivalent electric power of up to 300 MW(e).
+SMRs may be deployed as single or multi-module plants.
+Multiple SMR designs exist including light water reactors, high temperature gas-cooled reactors, and molten salt reactors.
+
+1.2 Safety Advantages of SMRs
+SMRs incorporate passive safety systems that rely on natural forces such as gravity and natural convection.
+Smaller core sizes reduce decay heat and improve passive cooling capabilities.
+Factory fabrication improves manufacturing quality control.
+
+2. LICENSING AND REGULATORY FRAMEWORK
+
+2.1 Design Certification
+SMR designs must undergo comprehensive safety review by national regulatory authorities.
+Design certification requires submission of a Final Safety Analysis Report (FSAR).
+The FSAR must address all safety-significant systems, structures, and components (SSCs).
+
+2.2 Probabilistic Risk Assessment
+A Probabilistic Risk Assessment (PRA) must be performed for all SMR designs.
+PRA must address internal events, external events, and seismic hazards.
+Core damage frequency (CDF) targets: less than 1E-4 per reactor year.
+Large early release frequency (LERF) targets: less than 1E-5 per reactor year.
+
+2.3 Regulatory Review Process
+Phase 1: Pre-application interactions and design review
+Phase 2: Formal design certification application
+Phase 3: Safety review and public comment period
+Phase 4: Final safety evaluation report (SER) issuance
+
+3. PASSIVE SAFETY SYSTEMS
+
+3.1 Emergency Core Cooling Systems
+Passive emergency core cooling must function without AC power or operator action.
+Gravity-driven injection systems must provide adequate core cooling.
+Natural circulation must remove decay heat for at least 72 hours without operator action.
+
+3.2 Containment Design
+Integral pressurized water reactor (iPWR) designs use integral containment structures.
+Containment must withstand design basis accidents including loss of coolant accidents (LOCA).
+Filtered containment venting systems must be provided for beyond design basis events.
+
+4. SITING REQUIREMENTS
+
+4.1 Site Evaluation
+Site evaluation must assess geological, seismological, hydrological, and meteorological conditions.
+Exclusion zone and low population zone requirements must be satisfied.
+SMRs may allow smaller exclusion zones due to enhanced passive safety features.
+
+4.2 Environmental Impact Assessment
+Environmental impact assessment must evaluate radiological and non-radiological impacts.
+Normal operation releases must comply with regulatory dose limits.
+Accident scenarios must demonstrate acceptable off-site consequences.
+
+5. OPERATIONAL SAFETY REQUIREMENTS
+
+5.1 Technical Specifications
+Limiting conditions for operation (LCOs) must be established for all safety systems.
+Surveillance requirements must verify operability of safety systems.
+Action levels must be defined for operation outside LCOs.
+
+5.2 Human Factors Engineering
+Control room design must incorporate human factors engineering principles.
+Procedures must be developed for normal, abnormal, and emergency operations.
+Operator training and qualification requirements must be established.
