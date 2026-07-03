@@ -3,8 +3,7 @@ Data Quality Checker
 --------------------
 Validates chunks before indexing:
   - Minimum length filter
-  - Duplicate detection (exact + near-duplicate via hashing)
-  - Language / encoding sanity
+  - Exact-duplicate detection (MD5 hash of normalized text)
   - Empty / boilerplate detection
 """
 
@@ -70,7 +69,10 @@ def validate_chunks(chunks: list[Document]) -> tuple[list[Document], dict]:
 def print_quality_report(report: dict, total: int):
     print("\n=== Data Quality Report ===")
     print(f"Total chunks input : {total}")
-    for reason, count in report.items():
-        pct = count / total * 100
-        print(f"  {reason:<22}: {count:>4}  ({pct:.1f}%)")
+    if total == 0:
+        print("  (no chunks to report on)")
+    else:
+        for reason, count in report.items():
+            pct = count / total * 100
+            print(f"  {reason:<22}: {count:>4}  ({pct:.1f}%)")
     print("===========================\n")

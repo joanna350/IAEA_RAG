@@ -9,6 +9,7 @@ Monitoring : logs query latency, retrieval scores, token usage
 import time
 import logging
 from src.monitoring import log_query, print_metrics
+from src.data_quality import validate_chunks, print_quality_report
 from typing import Optional
 from dataclasses import dataclass
 
@@ -105,6 +106,21 @@ def chunk_documents(docs: list[Document], cfg: PipelineConfig) -> list[Document]
 
     log.info(f"Total chunks after splitting: {len(chunks)}")
     return chunks
+
+
+def prepare_chunks(docs: list[Document], cfg: PipelineConfig) -> list[Document]:
+    """
+    Chunk documents and drop low-quality chunks (too short, boilerplate,
+    duplicate, low information density). chunk_id is reassigned densely
+    over the *filtered* list, since hybrid_search indexes chunks by
+    position — reusing pre-filter ids would misalign retrieval lookups.
+    """
+    raw_chunks = chunk_documents(docs, cfg)
+    clean_chunks, report = validate_chunks(raw_chunks)
+    print_quality_report(report, total=len(raw_chunks))
+    for i, chunk in enumerate(clean_chunks):
+        chunk.metadata["chunk_id"] = i
+    return clean_chunks
 
 
 # ---------------------------------------------------------------------------
@@ -299,9 +315,9 @@ class IAEARagPipeline:
         self.bm25: Optional[BM25Okapi] = None
 
     def ingest(self):
-        """Load → chunk → embed → index. Run once (or when docs change)."""
+        """Load → chunk → filter → embed → index. Run once (or when docs change)."""
         docs = load_documents(self.cfg.data_dir)
-        self.chunks = chunk_documents(docs, self.cfg)
+        self.chunks = prepare_chunks(docs, self.cfg)
         self.vector_store = build_vector_store(self.chunks, self.cfg, self.embeddings)
         self.bm25 = build_bm25_index(self.chunks)
         log.info("Ingestion complete.")
@@ -309,9 +325,10 @@ class IAEARagPipeline:
     def load(self):
         """Load pre-built index from disk (skip re-embedding)."""
         self.vector_store = load_vector_store(self.cfg, self.embeddings)
-        # Reload chunks for BM25 (lightweight)
+        # Reload + re-filter chunks for BM25 (lightweight, must match ingest()
+        # exactly so chunk_id stays aligned with what's stored in the FAISS index)
         docs = load_documents(self.cfg.data_dir)
-        self.chunks = chunk_documents(docs, self.cfg)
+        self.chunks = prepare_chunks(docs, self.cfg)
         self.bm25 = build_bm25_index(self.chunks)
         log.info("Pipeline loaded from disk.")
 
