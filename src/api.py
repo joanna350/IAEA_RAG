@@ -37,6 +37,7 @@ class QueryResponse(BaseModel):
     retrieval_scores: list[float]
     retrieval_methods: list[str]
     latency_sec: float
+    retrieval_latency_sec: float
     total_latency_sec: float
     input_tokens: int
     output_tokens: int

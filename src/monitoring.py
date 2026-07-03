@@ -9,9 +9,12 @@ Tracks:
 """
 
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, asdict
+
+log = logging.getLogger(__name__)
 
 LOG_PATH = Path("logs/query_log.jsonl")
 LOG_PATH.parent.mkdir(exist_ok=True)
@@ -40,17 +43,19 @@ class QueryMetrics:
 
 
 def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    if model not in PRICING:
+        log.warning(f"No pricing entry for model '{model}' — cost will be reported as 0.")
     p = PRICING.get(model, {"input": 0, "output": 0})
     return (input_tokens * p["input"] + output_tokens * p["output"]) / 1000
 
 
-def log_query(result: dict, question: str, model: str = "gpt-4o-mini") -> QueryMetrics:
+def log_query(result: dict, question: str, model: str = "llama-3.1-8b-instant") -> QueryMetrics:
     cost = compute_cost(model, result.get("input_tokens", 0), result.get("output_tokens", 0))
 
     metrics = QueryMetrics(
         timestamp=datetime.utcnow().isoformat(),
         question=question,
-        retrieval_latency_sec=result.get("latency_sec", 0),
+        retrieval_latency_sec=result.get("retrieval_latency_sec", 0),
         llm_latency_sec=result.get("latency_sec", 0),
         total_latency_sec=result.get("total_latency_sec", 0),
         input_tokens=result.get("input_tokens", 0),

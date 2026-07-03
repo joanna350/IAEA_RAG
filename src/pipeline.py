@@ -21,6 +21,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from rank_bm25 import BM25Okapi
+from sentence_transformers import CrossEncoder
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -44,11 +45,14 @@ class PipelineConfig:
     chunk_overlap: int = 64
     top_k_vector: int = 5
     top_k_bm25: int = 5
+    top_k_candidates: int = 10  # candidates passed to reranker before final cut
     top_k_final: int = 4
     embedding_model: str = "text-embedding-3-small"
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "llama-3.1-8b-instant"  # must match a key in monitoring.PRICING
     bm25_weight: float = 0.3   # hybrid score = bm25*w + vector*(1-w)
     vector_weight: float = 0.7
+    reranker_model: str = "BAAI/bge-reranker-base"
+    rerank_enabled: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -190,14 +194,43 @@ def hybrid_search(
         method = "hybrid" if (cid in vec_scores and cid in bm25_scores) else (
             "vector" if cid in vec_scores else "bm25"
         )
-        fused.append(RetrievedChunk(doc=chunks[cid], score=combined, retrieval_method=method))
+        fused.append(RetrievedChunk(doc=chunks[cid], score=float(combined), retrieval_method=method))
 
     fused.sort(key=lambda x: x.score, reverse=True)
-    return fused[: cfg.top_k_final]
+    return fused[: cfg.top_k_candidates]
 
 
 # ---------------------------------------------------------------------------
-# 6. LLM Answer Generation
+# 6. Reranking
+# ---------------------------------------------------------------------------
+
+def rerank_chunks(
+    query: str,
+    candidates: list[RetrievedChunk],
+    reranker: CrossEncoder,
+    cfg: PipelineConfig,
+) -> list[RetrievedChunk]:
+    """
+    Re-score fused candidates with a cross-encoder for query-document relevance,
+    then return the top_k_final. Cross-encoders read query+doc jointly, so they
+    catch relevance signals that separate dense/sparse scoring miss.
+    """
+    if not candidates:
+        return candidates
+
+    pairs = [[query, c.doc.page_content] for c in candidates]
+    scores = reranker.predict(pairs)
+
+    reranked = [
+        RetrievedChunk(doc=c.doc, score=float(s), retrieval_method=f"{c.retrieval_method}+rerank")
+        for c, s in zip(candidates, scores)
+    ]
+    reranked.sort(key=lambda x: x.score, reverse=True)
+    return reranked[: cfg.top_k_final]
+
+
+# ---------------------------------------------------------------------------
+# 7. LLM Answer Generation
 # ---------------------------------------------------------------------------
 
 PROMPT_TEMPLATE = ChatPromptTemplate.from_template("""
@@ -243,7 +276,7 @@ def generate_answer(
 
 
 # ---------------------------------------------------------------------------
-# 7. Pipeline Orchestrator
+# 8. Pipeline Orchestrator
 # ---------------------------------------------------------------------------
 
 class IAEARagPipeline:
@@ -259,7 +292,8 @@ class IAEARagPipeline:
     def __init__(self, cfg: Optional[PipelineConfig] = None):
         self.cfg = cfg or PipelineConfig()
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2") #OpenAIEmbeddings(model=self.cfg.embedding_model)
-        self.llm = ChatGroq(model="llama-3.1-8b-instant") #ChatOpenAI(model=self.cfg.llm_model, temperature=0)
+        self.llm = ChatGroq(model=self.cfg.llm_model) #ChatOpenAI(model=self.cfg.llm_model, temperature=0)
+        self.reranker = CrossEncoder(self.cfg.reranker_model) if self.cfg.rerank_enabled else None
         self.chunks: list[Document] = []
         self.vector_store: Optional[FAISS] = None
         self.bm25: Optional[BM25Okapi] = None
@@ -289,8 +323,16 @@ class IAEARagPipeline:
         log.info(f"Query: {question}")
         t0 = time.time()
 
-        retrieved = hybrid_search(question, self.chunks, self.vector_store, self.bm25, self.cfg)
+        t_retrieval = time.time()
+        candidates = hybrid_search(question, self.chunks, self.vector_store, self.bm25, self.cfg)
+        if self.reranker is not None:
+            retrieved = rerank_chunks(question, candidates, self.reranker, self.cfg)
+        else:
+            retrieved = candidates[: self.cfg.top_k_final]
+        retrieval_latency = time.time() - t_retrieval
+
         result = generate_answer(question, retrieved, self.llm)
+        result["retrieval_latency_sec"] = round(retrieval_latency, 2)
         result["total_latency_sec"] = round(time.time() - t0, 2)
 
         # Log quality metrics
