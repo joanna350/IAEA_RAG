@@ -4,12 +4,15 @@ Data Quality Checker
 Validates chunks before indexing:
   - Minimum length filter
   - Exact-duplicate detection (MD5 hash of normalized text)
+  - Near-duplicate detection (embedding cosine similarity, optional)
   - Empty / boilerplate detection
 """
 
 import hashlib
 import re
 from collections import Counter
+
+import numpy as np
 from langchain_core.documents import Document
 
 
@@ -20,15 +23,55 @@ BOILERPLATE_PATTERNS = [
     r"^[\.\-\*\s]+$", # 점, 대시, 별표만 있는 구분선
 ]
 
+# Not yet validated against real near-duplicate examples in this corpus —
+# revisit once the dataset is large enough to have any.
+DEFAULT_NEAR_DUP_THRESHOLD = 0.95
+
 
 def _hash(text: str) -> str:
     return hashlib.md5(text.strip().lower().encode()).hexdigest()
 
 
-def validate_chunks(chunks: list[Document]) -> tuple[list[Document], dict]:
+def find_near_duplicates(chunks: list[Document], embeddings, threshold: float) -> set[int]:
+    """
+    Pairwise cosine similarity over chunk embeddings, O(n^2) similarity matrix.
+    Fine at the current corpus scale (tens of chunks); an approximate index
+    (FAISS/LSH) would be needed if this ever runs over tens of thousands.
+
+    Returns the set of indices (into `chunks`) to drop — for each similar
+    pair, the later chunk is dropped and the earlier one is kept.
+    """
+    if len(chunks) < 2:
+        return set()
+
+    vectors = np.array(embeddings.embed_documents([c.page_content for c in chunks]))
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    normalized = vectors / norms
+    similarity = normalized @ normalized.T
+
+    to_drop: set[int] = set()
+    n = len(chunks)
+    for i in range(n):
+        if i in to_drop:
+            continue
+        for j in range(i + 1, n):
+            if j not in to_drop and similarity[i, j] >= threshold:
+                to_drop.add(j)
+    return to_drop
+
+
+def validate_chunks(
+    chunks: list[Document],
+    embeddings=None,
+    near_dup_threshold: float = DEFAULT_NEAR_DUP_THRESHOLD,
+) -> tuple[list[Document], dict]:
     """
     Returns (clean_chunks, report_dict).
     report_dict contains counts of each rejection reason.
+
+    Near-duplicate detection only runs if `embeddings` is passed in — it
+    requires an embed_documents() call per surviving chunk, so it's opt-in
+    rather than always-on.
     """
     seen_hashes: set[str] = set()
     clean: list[Document] = []
@@ -62,6 +105,14 @@ def validate_chunks(chunks: list[Document]) -> tuple[list[Document], dict]:
 
         report["passed"] += 1
         clean.append(chunk)
+
+    # 5. Near-duplicate (optional, requires an embeddings model)
+    if embeddings is not None:
+        dup_indices = find_near_duplicates(clean, embeddings, near_dup_threshold)
+        if dup_indices:
+            clean = [c for i, c in enumerate(clean) if i not in dup_indices]
+            report["near_duplicate"] = len(dup_indices)
+            report["passed"] -= len(dup_indices)
 
     return clean, dict(report)
 

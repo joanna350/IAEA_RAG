@@ -108,15 +108,16 @@ def chunk_documents(docs: list[Document], cfg: PipelineConfig) -> list[Document]
     return chunks
 
 
-def prepare_chunks(docs: list[Document], cfg: PipelineConfig) -> list[Document]:
+def prepare_chunks(docs: list[Document], cfg: PipelineConfig, embeddings=None) -> list[Document]:
     """
     Chunk documents and drop low-quality chunks (too short, boilerplate,
-    duplicate, low information density). chunk_id is reassigned densely
-    over the *filtered* list, since hybrid_search indexes chunks by
-    position — reusing pre-filter ids would misalign retrieval lookups.
+    duplicate, near-duplicate, low information density). chunk_id is
+    reassigned densely over the *filtered* list, since hybrid_search
+    indexes chunks by position — reusing pre-filter ids would misalign
+    retrieval lookups.
     """
     raw_chunks = chunk_documents(docs, cfg)
-    clean_chunks, report = validate_chunks(raw_chunks)
+    clean_chunks, report = validate_chunks(raw_chunks, embeddings=embeddings)
     print_quality_report(report, total=len(raw_chunks))
     for i, chunk in enumerate(clean_chunks):
         chunk.metadata["chunk_id"] = i
@@ -318,7 +319,7 @@ class IAEARagPipeline:
     def ingest(self):
         """Load → chunk → filter → embed → index. Run once (or when docs change)."""
         docs = load_documents(self.cfg.data_dir)
-        self.chunks = prepare_chunks(docs, self.cfg)
+        self.chunks = prepare_chunks(docs, self.cfg, self.embeddings)
         self.vector_store = build_vector_store(self.chunks, self.cfg, self.embeddings)
         self.bm25 = build_bm25_index(self.chunks)
         log.info("Ingestion complete.")
@@ -329,7 +330,7 @@ class IAEARagPipeline:
         # Reload + re-filter chunks for BM25 (lightweight, must match ingest()
         # exactly so chunk_id stays aligned with what's stored in the FAISS index)
         docs = load_documents(self.cfg.data_dir)
-        self.chunks = prepare_chunks(docs, self.cfg)
+        self.chunks = prepare_chunks(docs, self.cfg, self.embeddings)
         self.bm25 = build_bm25_index(self.chunks)
         log.info("Pipeline loaded from disk.")
 
