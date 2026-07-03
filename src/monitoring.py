@@ -40,6 +40,8 @@ class QueryMetrics:
     retrieval_methods: list
     sources: list
     answer_length: int
+    answer: str
+    contexts: list
 
 
 def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -65,6 +67,8 @@ def log_query(result: dict, question: str, model: str = "llama-3.1-8b-instant") 
         retrieval_methods=result.get("retrieval_methods", []),
         sources=result.get("sources", []),
         answer_length=len(result.get("answer", "")),
+        answer=result.get("answer", ""),
+        contexts=result.get("contexts", []),
     )
 
     # Append to JSONL log

@@ -288,6 +288,7 @@ def generate_answer(
         "sources": [r.doc.metadata.get("source") for r in retrieved],
         "retrieval_scores": [round(r.score, 4) for r in retrieved],
         "retrieval_methods": [r.retrieval_method for r in retrieved],
+        "contexts": [r.doc.page_content for r in retrieved],
     }
 
 
