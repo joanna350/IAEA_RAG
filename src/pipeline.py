@@ -7,10 +7,11 @@ Monitoring : logs query latency, retrieval scores, token usage
 """
 
 import time
+import json
 import logging
 from src.monitoring import log_query, print_metrics
 from src.data_quality import validate_chunks, print_quality_report
-from typing import Optional
+from typing import Optional, Iterator
 from dataclasses import dataclass
 
 from langchain_community.document_loaders import TextLoader, PyMuPDFLoader
@@ -263,19 +264,23 @@ Answer (cite document sections where possible):
 """)
 
 
+def build_prompt(query: str, retrieved: list[RetrievedChunk]):
+    """Shared by generate_answer() and IAEARagPipeline.query_stream()."""
+    context_parts = [
+        f"[{i}] ({r.doc.metadata.get('source', 'unknown')})\n{r.doc.page_content}"
+        for i, r in enumerate(retrieved, 1)
+    ]
+    context = "\n\n---\n\n".join(context_parts)
+    return PROMPT_TEMPLATE.format_messages(context=context, question=query)
+
+
 def generate_answer(
     query: str,
     retrieved: list[RetrievedChunk],
     llm: ChatOpenAI,
 ) -> dict:
     """Format context and generate LLM answer."""
-    context_parts = []
-    for i, r in enumerate(retrieved, 1):
-        source = r.doc.metadata.get("source", "unknown")
-        context_parts.append(f"[{i}] ({source})\n{r.doc.page_content}")
-    context = "\n\n---\n\n".join(context_parts)
-
-    prompt = PROMPT_TEMPLATE.format_messages(context=context, question=query)
+    prompt = build_prompt(query, retrieved)
 
     t0 = time.time()
     response = llm.invoke(prompt)
@@ -334,6 +339,16 @@ class IAEARagPipeline:
         self.bm25 = build_bm25_index(self.chunks)
         log.info("Pipeline loaded from disk.")
 
+    def _retrieve(self, question: str) -> tuple[list[RetrievedChunk], float]:
+        """Hybrid search + rerank. Shared by query() and query_stream()."""
+        t_retrieval = time.time()
+        candidates = hybrid_search(question, self.chunks, self.vector_store, self.bm25, self.cfg)
+        if self.reranker is not None:
+            retrieved = rerank_chunks(question, candidates, self.reranker, self.cfg)
+        else:
+            retrieved = candidates[: self.cfg.top_k_final]
+        return retrieved, time.time() - t_retrieval
+
     def query(self, question: str) -> dict:
         """Run hybrid retrieval + LLM generation. Returns result dict with metrics."""
         if not self.vector_store or not self.bm25:
@@ -342,13 +357,7 @@ class IAEARagPipeline:
         log.info(f"Query: {question}")
         t0 = time.time()
 
-        t_retrieval = time.time()
-        candidates = hybrid_search(question, self.chunks, self.vector_store, self.bm25, self.cfg)
-        if self.reranker is not None:
-            retrieved = rerank_chunks(question, candidates, self.reranker, self.cfg)
-        else:
-            retrieved = candidates[: self.cfg.top_k_final]
-        retrieval_latency = time.time() - t_retrieval
+        retrieved, retrieval_latency = self._retrieve(question)
 
         result = generate_answer(question, retrieved, self.llm)
         result["retrieval_latency_sec"] = round(retrieval_latency, 2)
@@ -364,3 +373,61 @@ class IAEARagPipeline:
         metrics = log_query(result, question, model=self.cfg.llm_model)
         print_metrics(metrics)
         return result
+
+    def query_stream(self, question: str) -> Iterator[str]:
+        """
+        Same retrieval as query(), but streams the LLM answer token-by-token
+        as SSE events instead of returning one dict. Retrieval/rerank are not
+        streamed — they're a single fast call — only generation is
+        incremental. Metrics are logged once the stream completes, exactly
+        like the non-streaming path.
+
+        Emits three event types:
+          meta  - sources/retrieval_scores/retrieval_methods, sent once up front
+          token - one answer text fragment per event
+          done  - final latency/token counts, sent once at the end
+        """
+        if not self.vector_store or not self.bm25:
+            raise RuntimeError("Pipeline not initialized. Call ingest() or load() first.")
+
+        log.info(f"Query (stream): {question}")
+        t0 = time.time()
+
+        retrieved, retrieval_latency = self._retrieve(question)
+
+        meta = {
+            "sources": [r.doc.metadata.get("source") for r in retrieved],
+            "retrieval_scores": [round(r.score, 4) for r in retrieved],
+            "retrieval_methods": [r.retrieval_method for r in retrieved],
+        }
+        yield f"event: meta\ndata: {json.dumps(meta)}\n\n"
+
+        prompt = build_prompt(question, retrieved)
+
+        t_llm = time.time()
+        answer_parts: list[str] = []
+        input_tokens = output_tokens = 0
+        for chunk in self.llm.stream(prompt):
+            if chunk.content:
+                answer_parts.append(chunk.content)
+                yield f"event: token\ndata: {json.dumps({'text': chunk.content})}\n\n"
+            if chunk.usage_metadata:
+                input_tokens = chunk.usage_metadata.get("input_tokens", input_tokens)
+                output_tokens = chunk.usage_metadata.get("output_tokens", output_tokens)
+        llm_latency = time.time() - t_llm
+
+        result = {
+            "answer": "".join(answer_parts),
+            "latency_sec": round(llm_latency, 2),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "contexts": [r.doc.page_content for r in retrieved],
+            **meta,
+        }
+        result["retrieval_latency_sec"] = round(retrieval_latency, 2)
+        result["total_latency_sec"] = round(time.time() - t0, 2)
+
+        metrics = log_query(result, question, model=self.cfg.llm_model)
+        print_metrics(metrics)
+
+        yield f"event: done\ndata: {json.dumps({'total_latency_sec': result['total_latency_sec'], 'input_tokens': input_tokens, 'output_tokens': output_tokens})}\n\n"

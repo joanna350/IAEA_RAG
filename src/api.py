@@ -4,10 +4,12 @@ FastAPI server for IAEA RAG pipeline.
 Endpoints:
     POST /ingest        - (re)build the index
     POST /query         - query the pipeline
+    POST /query/stream  - query the pipeline, streaming the answer via SSE
     GET  /health        - liveness check
 """
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import logging
 
@@ -71,3 +73,21 @@ def query(req: QueryRequest):
         return QueryResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/query/stream")
+def query_stream(req: QueryRequest):
+    """
+    Same retrieval/generation as /query, but streams the answer as it's
+    generated instead of waiting for the full response. Server-Sent Events:
+    one 'meta' event (sources/scores) up front, one 'token' event per answer
+    fragment, one 'done' event with final latency/token counts.
+    """
+    if pipeline.vector_store is None:
+        raise HTTPException(status_code=400, detail="Index not built. Call /ingest first.")
+    pipeline.cfg.top_k_final = req.top_k
+    return StreamingResponse(
+        pipeline.query_stream(req.question),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
