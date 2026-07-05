@@ -4,17 +4,10 @@ Run: python scripts/demo.py
 """
 
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pipeline import PipelineConfig
-from data_quality import validate_chunks, print_quality_report
-from langchain_community.document_loaders import TextLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from pathlib import Path
-
-
-from pipeline import PipelineConfig, load_documents, chunk_documents, build_bm25_index
-from data_quality import validate_chunks, print_quality_report
+from src.pipeline import PipelineConfig, load_documents, chunk_documents, build_bm25_index
+from src.data_quality import validate_chunks, print_quality_report
 
 
 def run_demo():
