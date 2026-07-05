@@ -276,13 +276,23 @@ Answer (cite document sections where possible):
 """)
 
 
-def build_prompt(query: str, retrieved: list[RetrievedChunk]):
-    """Shared by generate_answer() and IAEARagPipeline.query_stream()."""
-    context_parts = [
+def format_context_parts(retrieved: list[RetrievedChunk]) -> list[str]:
+    """
+    Per-chunk text exactly as shown to the LLM (source label + content).
+    Used both to build the prompt and to log 'contexts' for monitoring/RAGAS —
+    logging bare page_content instead would break faithfulness scoring
+    whenever the LLM cites "[i] (source)", since the citation claim can't be
+    verified against context that doesn't contain the citation labels.
+    """
+    return [
         f"[{i}] ({r.doc.metadata.get('source', 'unknown')})\n{r.doc.page_content}"
         for i, r in enumerate(retrieved, 1)
     ]
-    context = "\n\n---\n\n".join(context_parts)
+
+
+def build_prompt(query: str, retrieved: list[RetrievedChunk]):
+    """Shared by generate_answer() and IAEARagPipeline.query_stream()."""
+    context = "\n\n---\n\n".join(format_context_parts(retrieved))
     return PROMPT_TEMPLATE.format_messages(context=context, question=query)
 
 
@@ -306,7 +316,7 @@ def generate_answer(
         "sources": [r.doc.metadata.get("source") for r in retrieved],
         "retrieval_scores": [round(r.score, 4) for r in retrieved],
         "retrieval_methods": [r.retrieval_method for r in retrieved],
-        "contexts": [r.doc.page_content for r in retrieved],
+        "contexts": format_context_parts(retrieved),
     }
 
 
@@ -433,7 +443,7 @@ class IAEARagPipeline:
             "latency_sec": round(llm_latency, 2),
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "contexts": [r.doc.page_content for r in retrieved],
+            "contexts": format_context_parts(retrieved),
             **meta,
         }
         result["retrieval_latency_sec"] = round(retrieval_latency, 2)
