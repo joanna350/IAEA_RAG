@@ -1,5 +1,4 @@
 .env
-faiss_index/
 __pycache__/
 .venv/
 .idea/

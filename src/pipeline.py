@@ -1,11 +1,12 @@
 """
 IAEA Document RAG Pipeline
 --------------------------
-Ingestion  : load text/PDF docs → chunk → embed → store in FAISS
+Ingestion  : load text/PDF docs → chunk → embed → store in Qdrant
 Retrieval  : hybrid search (BM25 + vector) → rerank → LLM answer
 Monitoring : logs query latency, retrieval scores, token usage
 """
 
+import os
 import time
 import json
 import logging
@@ -19,7 +20,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
+from langchain_qdrant import QdrantVectorStore
+from qdrant_client import QdrantClient
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from rank_bm25 import BM25Okapi
@@ -42,7 +44,8 @@ log = logging.getLogger(__name__)
 @dataclass
 class PipelineConfig:
     data_dir: str = "data"
-    index_dir: str = "faiss_index"
+    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
+    qdrant_collection: str = "iaea_chunks"
     chunk_size: int = 512
     chunk_overlap: int = 64
     top_k_vector: int = 5
@@ -133,20 +136,27 @@ def build_vector_store(
     chunks: list[Document],
     cfg: PipelineConfig,
     embeddings: OpenAIEmbeddings,
-) -> FAISS:
-    """Embed chunks and store in FAISS. Saves index to disk."""
-    log.info("Building FAISS vector store ...")
+) -> QdrantVectorStore:
+    """Embed chunks and store in Qdrant. Recreates the collection from scratch,
+    so re-running ingest() replaces stale data instead of appending to it."""
+    log.info(f"Building Qdrant collection '{cfg.qdrant_collection}' at {cfg.qdrant_url} ...")
     t0 = time.time()
-    store = FAISS.from_documents(chunks, embeddings)
-    store.save_local(cfg.index_dir)
-    log.info(f"Vector store built in {time.time() - t0:.1f}s → saved to '{cfg.index_dir}'")
+    store = QdrantVectorStore.from_documents(
+        chunks,
+        embeddings,
+        url=cfg.qdrant_url,
+        collection_name=cfg.qdrant_collection,
+        force_recreate=True,
+    )
+    log.info(f"Vector store built in {time.time() - t0:.1f}s → collection '{cfg.qdrant_collection}'")
     return store
 
 
-def load_vector_store(cfg: PipelineConfig, embeddings: OpenAIEmbeddings) -> FAISS:
-    """Load existing FAISS index from disk."""
-    log.info(f"Loading FAISS index from '{cfg.index_dir}' ...")
-    return FAISS.load_local(cfg.index_dir, embeddings, allow_dangerous_deserialization=True)
+def load_vector_store(cfg: PipelineConfig, embeddings: OpenAIEmbeddings) -> QdrantVectorStore:
+    """Connect to an existing Qdrant collection (built by a prior ingest())."""
+    log.info(f"Connecting to Qdrant collection '{cfg.qdrant_collection}' at {cfg.qdrant_url} ...")
+    client = QdrantClient(url=cfg.qdrant_url)
+    return QdrantVectorStore(client=client, collection_name=cfg.qdrant_collection, embedding=embeddings)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +183,7 @@ class RetrievedChunk:
 def hybrid_search(
     query: str,
     chunks: list[Document],
-    vector_store: FAISS,
+    vector_store: QdrantVectorStore,
     bm25: BM25Okapi,
     cfg: PipelineConfig,
 ) -> list[RetrievedChunk]:
@@ -186,12 +196,14 @@ def hybrid_search(
     """
     # --- Vector search ---
     vec_results = vector_store.similarity_search_with_score(query, k=cfg.top_k_vector)
-    # FAISS returns L2 distance; convert to similarity
-    max_dist = max(score for _, score in vec_results) or 1.0
+    # Qdrant (cosine distance) returns similarity directly, higher = better —
+    # unlike FAISS's raw L2 distance, no inversion needed. Just normalize by
+    # the top score so it's on the same 0-1ish scale as the BM25 side below.
+    max_score = max((score for _, score in vec_results), default=0.0) or 1.0
     vec_scores: dict[int, float] = {}
-    for doc, dist in vec_results:
+    for doc, score in vec_results:
         chunk_id = doc.metadata.get("chunk_id", -1)
-        vec_scores[chunk_id] = 1.0 - (dist / max_dist)
+        vec_scores[chunk_id] = score / max_score
 
     # --- BM25 search ---
     tokenized_query = query.lower().split()
@@ -318,7 +330,7 @@ class IAEARagPipeline:
         self.llm = ChatGroq(model=self.cfg.llm_model) #ChatOpenAI(model=self.cfg.llm_model, temperature=0)
         self.reranker = CrossEncoder(self.cfg.reranker_model) if self.cfg.rerank_enabled else None
         self.chunks: list[Document] = []
-        self.vector_store: Optional[FAISS] = None
+        self.vector_store: Optional[QdrantVectorStore] = None
         self.bm25: Optional[BM25Okapi] = None
 
     def ingest(self):
@@ -333,7 +345,7 @@ class IAEARagPipeline:
         """Load pre-built index from disk (skip re-embedding)."""
         self.vector_store = load_vector_store(self.cfg, self.embeddings)
         # Reload + re-filter chunks for BM25 (lightweight, must match ingest()
-        # exactly so chunk_id stays aligned with what's stored in the FAISS index)
+        # exactly so chunk_id stays aligned with what's stored in the Qdrant collection)
         docs = load_documents(self.cfg.data_dir)
         self.chunks = prepare_chunks(docs, self.cfg, self.embeddings)
         self.bm25 = build_bm25_index(self.chunks)

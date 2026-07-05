@@ -6,7 +6,7 @@ RAG (Retrieval-Augmented Generation) pipeline built for IAEA nuclear safety and 
 
 ```
 data/ (IAEA docs)
-  └─ load → chunk → quality_check (+ near-dup) → embed → FAISS index
+  └─ load → chunk → quality_check (+ near-dup) → embed → Qdrant collection
                                                        └─ BM25 index
 query
   └─ hybrid_search (vector + BM25) → rerank (cross-encoder) → LLM → answer + metrics
@@ -15,13 +15,14 @@ query
 
 ## Features
 
-- **Hybrid retrieval**: BM25 (sparse) + FAISS vector search (dense) with score fusion
+- **Hybrid retrieval**: BM25 (sparse) + Qdrant vector search (dense, cosine similarity) with score fusion
 - **Cross-encoder reranking**: `bge-reranker-base` re-scores the top fused candidates by reading query and chunk jointly, before the final top-k goes to the LLM
 - **Data quality pipeline**: length filtering, boilerplate removal, exact-duplicate (MD5) and near-duplicate (embedding cosine similarity) detection, low-information-density filtering — runs on every `ingest()`/`load()`, not just the demo script
 - **Monitoring**: per-query retrieval/LLM/total latency, token usage, cost estimation, retrieval scores/methods, and the full answer + retrieved contexts, all appended to a JSONL log
 - **Offline RAGAS evaluation**: `scripts/evaluate_ragas.py` batch-scores logged queries for faithfulness and answer relevancy, outside the request path
-- **FastAPI server**: REST endpoints for ingestion and querying
-- **Docker support**: containerized deployment
+- **FastAPI server**: REST endpoints for ingestion, querying, and streaming
+- **Qdrant vector store**: a real service (not a local file), so the index survives container restarts and works from a stateful Kubernetes deployment — unlike FAISS's local-file index
+- **Docker + docker-compose**: containerized deployment, API + Qdrant wired together
 
 ## Quick Start
 
@@ -29,6 +30,8 @@ query
 # Install dependencies
 pip install -r requirements.txt
 
+# Start Qdrant (retrieval needs a running instance — see Docker section below)
+docker compose up -d qdrant
 
 # Run offline demo (no API key needed)
 python scripts/demo.py
@@ -42,15 +45,26 @@ curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{"question": "What are the passive safety requirements for SMR?"}'
 
+# Same query, streamed as SSE
+curl -N -X POST http://localhost:8000/query/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are the passive safety requirements for SMR?"}'
+
 # Batch-score logged queries for faithfulness / answer relevancy
 python scripts/evaluate_ragas.py --output logs/ragas_report.json
 ```
 
 ## Docker
 
+The API needs Qdrant reachable at `QDRANT_URL` (default `http://localhost:6333`) — run both together with docker-compose rather than the API container alone:
+
 ```bash
+# API + Qdrant, wired together (recommended)
+docker compose up -d
+
+# Just the API image, against an already-running Qdrant elsewhere
 docker build -t iaea-rag .
-docker run -e GROQ_API_KEY=sk-... -p 8000:8000 iaea-rag
+docker run -e GROQ_API_KEY=sk-... -e QDRANT_URL=http://host.docker.internal:6333 -p 8000:8000 iaea-rag
 ```
 
 ## Project Structure
@@ -70,11 +84,13 @@ iaea-rag/
 │   ├── demo.py                  # Offline demo (BM25 only, no API key required)
 │   └── evaluate_ragas.py        # Batch RAGAS eval (faithfulness, answer relevancy)
 ├── logs/                        # Auto-created, gitignored — query_log.jsonl
-├── faiss_index/                 # Auto-created on ingest()
 ├── Dockerfile
+├── docker-compose.yml            # API + Qdrant, wired together
 ├── requirements.txt
 └── .env
 ```
+
+Qdrant's data lives in a Docker volume (`qdrant_data`), not a repo directory — nothing to gitignore for it, unlike the old `faiss_index/`.
 
 ## Chunking Strategy
 
@@ -84,32 +100,32 @@ Uses `RecursiveCharacterTextSplitter` with paragraph → sentence → word bound
 
 This preserves section context while keeping chunks small enough for precise retrieval.
 
-## Hybrid Search
-
-Score fusion formula:
-```
-final_score = 0.7 * vector_score + 0.3 * bm25_score
-```
-
-Vector search handles semantic similarity; BM25 handles exact keyword matching (e.g. regulation codes like "GSR Part 1", "LOCA", "FSAR").
-
-The top `top_k_candidates` (default 10) fused results are passed to reranking, not straight to the LLM.
-
-## Reranking
-
-`bge-reranker-base` (cross-encoder) re-scores each `(query, chunk)` pair jointly, then the top `top_k_final` (default 4) go into the LLM prompt. Cross-encoders catch relevance signals that fused BM25/vector scores alone miss, since they read the query and the chunk together instead of comparing separately-computed embeddings/keyword scores.
-
 ## Data Quality
 
-`validate_chunks()` runs five checks, in order, before a chunk is indexed:
+`validate_chunks()` runs five checks, in order, before a chunk is indexed — this happens at ingestion time, before anything reaches the vector store or BM25 index:
 
 1. **too_short** — under 80 characters
 2. **boilerplate** — page numbers, digit-only lines, separator lines
 3. **duplicate** — exact match via MD5 hash
-4. **near_duplicate** — embedding cosine similarity ≥ 0.95 (opt-in; only runs when an embeddings model is passed in). O(n²) pairwise comparison, fine at the current corpus scale — would need an approximate index (FAISS/LSH) in the tens-of-thousands-of-chunks range.
+4. **near_duplicate** — embedding cosine similarity ≥ 0.95 (opt-in; only runs when an embeddings model is passed in). O(n²) pairwise comparison, fine at the current corpus scale — would need an approximate index (e.g. Qdrant's own ANN index, or LSH) in the tens-of-thousands-of-chunks range.
 5. **low_info_density** — under 50% alphanumeric/whitespace characters
 
 A per-reason rejection count prints on every `ingest()`/`load()`.
+
+## Hybrid Search
+
+Retrieval, at query time, happens in two sequential stages — not two alternative mechanisms. Hybrid search casts a wide, cheap net; reranking then narrows it with a slower, more precise model.
+
+**Stage 1 — score fusion:**
+```
+final_score = 0.7 * vector_score + 0.3 * bm25_score
+```
+
+Vector search (Qdrant, cosine similarity) handles semantic similarity; BM25 handles exact keyword matching (e.g. regulation codes like "GSR Part 1", "LOCA", "FSAR"). The top `top_k_candidates` (default 10) fused results move on to reranking — the fusion score itself is discarded after that, it only decided who advances.
+
+## Reranking
+
+**Stage 2 — cross-encoder rescoring:** `bge-reranker-base` re-scores each of those 10 `(query, chunk)` pairs jointly, then the top `top_k_final` (default 4) go into the LLM prompt. Cross-encoders catch relevance signals that fused BM25/vector scores alone miss, since they read the query and the chunk together instead of comparing separately-computed embeddings/keyword scores. This rerank score — not the fusion score — is what ends up in the API response's `retrieval_scores`; `retrieval_methods` (e.g. `"hybrid+rerank"`) records which stage-1 method(s) surfaced each chunk plus the fact that it was reranked.
 
 ## Offline Evaluation
 
