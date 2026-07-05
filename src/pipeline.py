@@ -267,12 +267,16 @@ PROMPT_TEMPLATE = ChatPromptTemplate.from_template("""
 You are an expert assistant specializing in IAEA nuclear safety standards and SMR licensing.
 Answer the question using ONLY the provided context. If the answer is not in the context, say so clearly.
 
+When citing a source, append the bracket number only, e.g. "...must be conducted every 10 years [1]."
+Do not write full sentences describing where a fact came from (e.g. avoid "This is stated in document [1]
+under section 5.2") — just the bracket tag after the relevant statement.
+
 Context:
 {context}
 
 Question: {question}
 
-Answer (cite document sections where possible):
+Answer (cite sources as [n]):
 """)
 
 
