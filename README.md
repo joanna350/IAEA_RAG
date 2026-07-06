@@ -23,6 +23,8 @@ query
 - **FastAPI server**: REST endpoints for ingestion, querying, and streaming
 - **Qdrant vector store**: a real service (not a local file), so the index survives container restarts and works from a stateful Kubernetes deployment — unlike FAISS's local-file index
 - **Docker + docker-compose**: containerized deployment, API + Qdrant wired together
+- **Kubernetes manifests**: Namespace, Qdrant (PVC + Deployment + Service), API (Deployment + Service), Secrets — verified on a local kind cluster
+- **Admin API**: document upload/delete, reindex, and a stats dashboard, behind a shared-secret key
 
 ## Quick Start
 
@@ -81,8 +83,9 @@ kind load docker-image iaea-rag-api:latest --name iaea-rag
 
 kubectl apply -f k8s/00-namespace.yaml -f k8s/01-qdrant-pvc.yaml -f k8s/02-qdrant-deployment.yaml -f k8s/03-qdrant-service.yaml
 
-# Secret is created imperatively, not from the checked-in template (see k8s/04-api-secret.example.yaml)
+# Secrets are created imperatively, not from the checked-in templates (see k8s/04-api-secret.example.yaml)
 kubectl create secret generic groq-api-key -n iaea-rag --from-literal=GROQ_API_KEY=sk-...
+kubectl create secret generic admin-api-key -n iaea-rag --from-literal=ADMIN_API_KEY=...
 
 kubectl apply -f k8s/05-api-deployment.yaml -f k8s/06-api-service.yaml
 
@@ -91,9 +94,31 @@ kubectl port-forward -n iaea-rag svc/api 8080:8000
 curl -X POST http://localhost:8080/query -H "Content-Type: application/json" -d '{"question": "..."}'
 ```
 
-Verified: pods reach Ready, `/health`/`/query`/`/query/stream` work through port-forward, and — the actual point of moving off FAISS — deleting the Qdrant pod (`kubectl delete pod -n iaea-rag -l app=qdrant`) and letting it reschedule does **not** lose the indexed data, since it's backed by the PVC rather than the pod's own filesystem.
+Verified: pods reach Ready, `/health`/`/query`/`/query/stream` work through port-forward, and — the actual point of moving off FAISS — deleting the Qdrant pod (`kubectl delete pod -n iaea-rag -l app=qdrant`) and letting it reschedule does **not** lose the indexed data, since it's backed by the PVC rather than the pod's own filesystem. Also verified with the API scaled to 2 replicas (`kubectl scale deployment/api -n iaea-rag --replicas=2`): both pods return identical `retrieval_scores` for the same query, including a pod that never ran `/ingest` itself — confirming they share Qdrant rather than each holding their own copy, which is the actual reason FAISS's local-file index doesn't work here.
 
-Caveat: the API image doesn't bake in the embedding/reranker models, so every pod start re-downloads them from Hugging Face Hub (why the readiness probe's `initialDelaySeconds` is generous). Worth fixing by baking the model cache into the image or a shared volume before this goes anywhere near a real deployment.
+Caveats:
+- The API image doesn't bake in the embedding/reranker models, so every pod start re-downloads them from Hugging Face Hub (why the readiness probe's `initialDelaySeconds` is generous). Worth fixing by baking the model cache into the image or a shared volume before this goes anywhere near a real deployment.
+- `logs/` has no PVC in these manifests (unlike docker-compose, which bind-mounts it), so `/admin/stats` resets on every pod restart in Kubernetes. Would need the same PVC treatment as Qdrant's storage to persist across restarts.
+- Only Qdrant should ever run with `replicas: 1` here — its PVC is `ReadWriteOnce`, so scaling it would try to attach the same volume to two pods at once.
+
+## Admin API
+
+All `/admin/*` routes require a shared secret, either header (`X-Admin-Key: ...`) or query param (`?key=...`), checked against the `ADMIN_API_KEY` env var. If that env var isn't set at all, every admin route returns `503` rather than being open by default.
+
+```bash
+export ADMIN_API_KEY=...   # must match what the server was started with
+
+curl http://localhost:8000/admin/documents -H "X-Admin-Key: $ADMIN_API_KEY"
+curl -X POST http://localhost:8000/admin/documents -H "X-Admin-Key: $ADMIN_API_KEY" -F "file=@new_doc.txt"
+curl -X DELETE http://localhost:8000/admin/documents/new_doc.txt -H "X-Admin-Key: $ADMIN_API_KEY"
+curl -X POST http://localhost:8000/admin/reindex -H "X-Admin-Key: $ADMIN_API_KEY"
+curl http://localhost:8000/admin/stats -H "X-Admin-Key: $ADMIN_API_KEY"
+
+# Dashboard is a plain browser GET, so it takes the key as a query param instead of a header
+open "http://localhost:8000/admin/dashboard?key=$ADMIN_API_KEY"
+```
+
+Uploading or deleting a document doesn't reindex automatically — call `/admin/reindex` afterward. This is not production-grade auth (no rate limiting, and a key in `?key=` can end up in access logs) — it's a minimal gate appropriate for a trusted network, not a public endpoint.
 
 ## Project Structure
 
@@ -106,6 +131,7 @@ iaea-rag/
 ├── src/
 │   ├── pipeline.py              # Core RAG pipeline (load→chunk→embed→retrieve→generate)
 │   ├── api.py                   # FastAPI server
+│   ├── admin.py                 # Document management + log aggregation for /admin/*
 │   ├── data_quality.py          # Chunk validation & quality checks
 │   └── monitoring.py            # Latency, cost, retrieval metrics
 ├── scripts/
