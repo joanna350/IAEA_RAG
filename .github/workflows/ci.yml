@@ -44,13 +44,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # GHCR (and Docker registries generally) require lowercase image
+      # names, but github.repository preserves this repo's actual case
+      # (joanna350/IAEA_RAG) — lowercase it into its own step output
+      # rather than assuming github.actor/repository are already lowercase.
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
