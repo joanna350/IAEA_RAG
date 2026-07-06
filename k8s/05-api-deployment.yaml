@@ -29,6 +29,11 @@ spec:
                 secretKeyRef:
                   name: groq-api-key
                   key: GROQ_API_KEY
+            - name: ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: admin-api-key
+                  key: ADMIN_API_KEY
           resources:
             requests:
               cpu: 250m
