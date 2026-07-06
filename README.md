@@ -67,6 +67,34 @@ docker build -t iaea-rag .
 docker run -e GROQ_API_KEY=sk-... -e QDRANT_URL=http://host.docker.internal:6333 -p 8000:8000 iaea-rag
 ```
 
+## Kubernetes
+
+Manifests in `k8s/`: `Namespace`, Qdrant (`PersistentVolumeClaim` + `Deployment` + `Service`), API (`Secret` template + `Deployment` + `Service`). No Ingress yet — access via `kubectl port-forward` below, or add one if the cluster has an ingress controller.
+
+```bash
+# Build the image the Deployment expects (must be named iaea-rag-api:latest)
+docker compose build api
+
+# Using kind for local testing — load the image in directly, no registry needed
+kind create cluster --name iaea-rag
+kind load docker-image iaea-rag-api:latest --name iaea-rag
+
+kubectl apply -f k8s/00-namespace.yaml -f k8s/01-qdrant-pvc.yaml -f k8s/02-qdrant-deployment.yaml -f k8s/03-qdrant-service.yaml
+
+# Secret is created imperatively, not from the checked-in template (see k8s/04-api-secret.example.yaml)
+kubectl create secret generic groq-api-key -n iaea-rag --from-literal=GROQ_API_KEY=sk-...
+
+kubectl apply -f k8s/05-api-deployment.yaml -f k8s/06-api-service.yaml
+
+kubectl get pods -n iaea-rag
+kubectl port-forward -n iaea-rag svc/api 8080:8000
+curl -X POST http://localhost:8080/query -H "Content-Type: application/json" -d '{"question": "..."}'
+```
+
+Verified: pods reach Ready, `/health`/`/query`/`/query/stream` work through port-forward, and — the actual point of moving off FAISS — deleting the Qdrant pod (`kubectl delete pod -n iaea-rag -l app=qdrant`) and letting it reschedule does **not** lose the indexed data, since it's backed by the PVC rather than the pod's own filesystem.
+
+Caveat: the API image doesn't bake in the embedding/reranker models, so every pod start re-downloads them from Hugging Face Hub (why the readiness probe's `initialDelaySeconds` is generous). Worth fixing by baking the model cache into the image or a shared volume before this goes anywhere near a real deployment.
+
 ## Project Structure
 
 ```
@@ -84,6 +112,7 @@ iaea-rag/
 │   ├── demo.py                  # Offline demo (BM25 only, no API key required)
 │   └── evaluate_ragas.py        # Batch RAGAS eval (faithfulness, answer relevancy)
 ├── logs/                        # Auto-created, gitignored — query_log.jsonl
+├── k8s/                          # Namespace, Qdrant + API (Deployment/Service/PVC/Secret template)
 ├── Dockerfile
 ├── docker-compose.yml            # API + Qdrant, wired together
 ├── requirements.txt

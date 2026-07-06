@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: iaea-rag
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: iaea-rag-api:latest
+          imagePullPolicy: IfNotPresent  # image is loaded into the cluster via `kind load docker-image`, not pulled from a registry
+          ports:
+            - containerPort: 8000
+          env:
+            - name: QDRANT_URL
+              value: http://qdrant:6333
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: groq-api-key
+                  key: GROQ_API_KEY
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          # Generous delays: cold start downloads the embedding + reranker
+          # models from Hugging Face Hub on every pod start (not baked into
+          # the image), which can take well over a minute.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 90
+            periodSeconds: 15
